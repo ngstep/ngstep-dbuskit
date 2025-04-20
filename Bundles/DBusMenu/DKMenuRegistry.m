@@ -87,6 +87,22 @@
   return [self new];
 }
 
+- (void)_safeRegisterWindow:(NSDictionary *)args
+{
+  NSWindow *window = [args objectForKey:@"window"];
+  int internalNumber = [window windowNumber];
+  GSDisplayServer *srv = GSServerForWindow(window);
+  uint32_t number = (uint32_t)(uintptr_t)[srv windowDevice: internalNumber];
+  NSNumber *boxed = [NSNumber numberWithInt: number];
+
+  if ((NO == [windowNumbers containsIndex: number]))
+  {
+    NSDebugMLLog(@"DKMenu", @"(Deferred) Publishing menu for window %d", number);
+    [registrar RegisterWindow: boxed : busProxy];
+    [windowNumbers addIndex: number];
+  }
+}
+
 - (void)setupProxyForMenu: (NSMenu*)menu
 {
   menuProxy = [[DKMenuProxy alloc] initWithMenu: menu];
@@ -104,30 +120,30 @@
 - (void)setMenu: (NSMenu*)menu forWindow: (NSWindow*)window
 {
   if (nil == menuProxy)
-    {
-       [self setupProxyForMenu: menu];
-    }
+  {
+    [self setupProxyForMenu: menu];
+  }
   else
-    {
-      [menuProxy menuUpdated: menu];
-    }
+  {
+    NSDictionary *args = @{ @"window": window };
+    [[NSRunLoop currentRunLoop] performSelector:@selector(_safeRegisterWindow:)
+                                         target:self
+                                       argument:args
+                                          order:0
+                                          modes:@[NSDefaultRunLoopMode]];
+    return;
+  }
+
+  // First window logic continues here...
   int internalNumber = [window windowNumber];
   GSDisplayServer *srv = GSServerForWindow(window);
   uint32_t number = (uint32_t)(uintptr_t)[srv windowDevice: internalNumber];
   NSNumber *boxed = [NSNumber numberWithInt: number];
-  if ((nil != menu) && (NO == [windowNumbers containsIndex: number]))
-    {
-       NSDebugMLLog(@"DKMenu", @"Publishing menu for window %d", number);
-       [registrar RegisterWindow: boxed
-                                : busProxy];
-       [windowNumbers addIndex: number];
-    }
-  else if ((nil == menu) && (YES == [windowNumbers containsIndex: number]))
-    {
-      NSDebugMLLog(@"DKMenu", @"Retracting publication of menu for window %d", number);
-      [registrar UnregisterWindow: boxed];
-      [windowNumbers removeIndex: number];
-    }
-
+  if ((NO == [windowNumbers containsIndex: number]))
+  {
+    NSDebugMLLog(@"DKMenu", @"Publishing menu for window %d", number);
+    [registrar RegisterWindow: boxed : busProxy];
+    [windowNumbers addIndex: number];
+  }
 }
 @end
